@@ -24,7 +24,14 @@ OpenSSL.
 
 ### Set up networking (requires sudo)
 
-Run `./scripts/setup-softnet.sh` to configure VM network isolation.
+Run the one-time Softnet setup:
+
+```bash
+tartscaleset setup
+```
+
+This downloads the pinned Softnet binary into `.state/tools`, then uses `sudo`
+to make that one executable root-owned and setuid as required by Tart.
 
 > [!TIP]
 > If you don't have `sudo` access, export `TART_NETWORK_MODE=shared`.
@@ -32,27 +39,19 @@ Run `./scripts/setup-softnet.sh` to configure VM network isolation.
 ## Run
 
 ```bash
-./run.sh
-```
-
-Configuration comes only from process environment variables, parsed with
-[`caarlos0/env`](https://github.com/caarlos0/env). Common settings have built-in
-defaults; export only the overrides you need:
-
-```bash
-export RUNNER_MAX_COUNT=4
-export XCODE_APP_PATH=/Applications/Xcode-beta.app
-./run.sh
+tartscaleset
 ```
 
 # More details
 
 (The copy from hereon out is unreviewed / slop)
 
-On first run, the controller downloads an Ubuntu ARM64 Tart image and provisions
-a reusable local base VM. The image has a minimum size of 20 GB and is expanded
-to 50 GB by default. Its embedded image version is recorded in `.state`; bumping
-`baseImageVersion` rebuilds an outdated base VM the next time `run.sh` starts.
+The controller downloads pinned Tart and Softnet releases into `.state/tools`;
+no system or Homebrew installation is required. On first run, it also downloads
+an Ubuntu ARM64 Tart image and provisions a reusable local base VM. The image has
+a minimum size of 20 GB and is expanded to 50 GB by default. Its embedded image
+version is recorded in `.state`; bumping `baseImageVersion` rebuilds an outdated
+base VM the next time `run.sh` starts.
 
 `run.sh` starts a GitHub Actions runner scale-set listener backed by Tart. It
 keeps one clean runner waiting by default, generates a JIT configuration for
@@ -66,8 +65,8 @@ example by replacing its Docker provider with Tart. It uses the public-preview
 The controller is built with `CGO_ENABLED=0`, and both scripts streamed into the
 Linux guests are compiled into the executable with `go:embed`. The resulting
 binary in `.tools/bin/tartscaleset` does not need the repository's scripts or Go
-toolchain at runtime; it only needs its environment, the configured Tart binary,
-and the host files named by that environment.
+toolchain at runtime; it only needs its environment and the host files named by
+that environment.
 
 To produce a distributable Apple Silicon binary:
 
@@ -76,20 +75,34 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
   go build -trimpath -ldflags='-s -w' -o tartscaleset ./cmd/tartscaleset
 ```
 
-Copy only `tartscaleset` to the destination Mac. Tart must be installed and in
-`PATH` (or selected with `TART_BIN`), and Softnet must be installed/configured
-when using the default `softnet` network mode. Then inject configuration and run
-the binary directly from any working directory:
+Copy only `tartscaleset` to the destination Mac; the repository is not needed.
+From the desired working directory, inject any configuration, perform the
+one-time network setup, and run it:
 
 ```bash
 export APP_PRIVATE_KEY_FILE=/secure/path/runner-private-key.pem
-export TART_BIN=/path/to/tart
+./tartscaleset setup
 ./tartscaleset
 ```
 
+The binary creates `.state/tools` beside that working directory by default.
+Override the root with `RUNNER_STATE_DIR`; `TART_BIN` and `SOFTNET_BIN` can still
+select externally managed executables.
+
 Press Ctrl+C to stop the listener. Shutdown deletes its runner VMs, message
 session, and scale set. After an unclean host shutdown, the next start cleans
-VMs recorded by the previous controller before accepting work.
+VMs recorded by the previous controller before accepting work. Tart VM output
+is written under `.state/logs`.
+
+Configuration comes from process environment variables, parsed with
+[`caarlos0/env`](https://github.com/caarlos0/env). All settings have built-in
+defaults; export only the overrides you need:
+
+```bash
+export RUNNER_MAX_COUNT=4
+export XCODE_APP_PATH=/Applications/Xcode-beta.app
+tartscaleset
+```
 
 Target it from a workflow with:
 
@@ -123,11 +136,11 @@ binaries.
 ## Network isolation
 
 Softnet networking is the default and blocks guest access to private IPv4
-networks. The scripts pin openai/softnet and verify its published SHA-256
-checksum. Configure its narrowly scoped host privileges once:
+networks. The controller pins Softnet and verifies its SHA-256 checksum.
+Configure its narrowly scoped host privileges once:
 
 ```bash
-./scripts/setup-softnet.sh
+./run.sh setup
 ```
 
 This prompts for your macOS administrator password to make only the pinned

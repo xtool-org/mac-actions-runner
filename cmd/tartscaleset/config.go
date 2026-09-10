@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"os"
@@ -33,18 +34,52 @@ type config struct {
 	TartDiskGB        int      `env:"TART_DISK_GB" envDefault:"50"`
 	TartNetworkMode   string   `env:"TART_NETWORK_MODE" envDefault:"softnet"`
 	TartSoftnetAllow  string   `env:"TART_SOFTNET_ALLOW"`
+	SoftnetBin        string   `env:"SOFTNET_BIN" envDefault:"auto"`
 	XcodeAppPath      string   `env:"XCODE_APP_PATH" envDefault:"auto"`
 	StateDir          string   `env:"RUNNER_STATE_DIR" envDefault:".state"`
 	VMReadyTimeoutSec int      `env:"VM_READY_TIMEOUT_SECONDS" envDefault:"180"`
 }
 
-func loadConfig() (config, error) {
+func parseConfig() (config, error) {
 	cfg, err := env.ParseAs[config]()
 	if err != nil {
 		return config{}, fmt.Errorf("parse environment: %w", err)
 	}
 	cfg.RunnerLabels = trimStrings(cfg.RunnerLabels)
-	if err := cfg.resolve(); err != nil {
+	return cfg, nil
+}
+
+func loadConfig(ctx context.Context) (config, error) {
+	cfg, err := parseConfig()
+	if err != nil {
+		return config{}, err
+	}
+	if err := cfg.resolveStateDir(); err != nil {
+		return config{}, err
+	}
+	tools := toolManager{stateDir: cfg.StateDir}
+	if cfg.TartBin == "auto" {
+		cfg.TartBin, err = tools.ensureTart(ctx)
+	} else {
+		cfg.TartBin, err = filepath.Abs(cfg.TartBin)
+	}
+	if err != nil {
+		return config{}, err
+	}
+	if cfg.TartNetworkMode == "softnet" {
+		if cfg.SoftnetBin == "auto" {
+			cfg.SoftnetBin, err = tools.ensureSoftnet(ctx)
+		} else {
+			cfg.SoftnetBin, err = filepath.Abs(cfg.SoftnetBin)
+		}
+		if err != nil {
+			return config{}, err
+		}
+		if err := requirePrivilegedSoftnet(cfg.SoftnetBin); err != nil {
+			return config{}, err
+		}
+	}
+	if err := cfg.resolveRuntimePaths(); err != nil {
 		return config{}, err
 	}
 	if err := cfg.validate(); err != nil {
@@ -63,7 +98,16 @@ func trimStrings(values []string) []string {
 	return trimmed
 }
 
-func (c *config) resolve() error {
+func (c *config) resolveStateDir() error {
+	stateDir, err := filepath.Abs(c.StateDir)
+	if err != nil {
+		return fmt.Errorf("resolve RUNNER_STATE_DIR: %w", err)
+	}
+	c.StateDir = stateDir
+	return nil
+}
+
+func (c *config) resolveRuntimePaths() error {
 	if c.GitHubRunnerURL == "auto" {
 		c.GitHubRunnerURL = "https://github.com/" + c.OrgName
 	}
@@ -82,22 +126,9 @@ func (c *config) resolve() error {
 		}
 		c.XcodeAppPath = strings.TrimSuffix(developerDir, suffix)
 	}
-	if c.TartBin == "auto" {
-		path, err := exec.LookPath("tart")
-		if err != nil {
-			return fmt.Errorf("find tart in PATH (set TART_BIN to override): %w", err)
-		}
-		c.TartBin = path
-	}
 	var err error
-	if c.TartBin, err = filepath.Abs(c.TartBin); err != nil {
-		return fmt.Errorf("resolve TART_BIN: %w", err)
-	}
 	if c.AppPrivateKeyFile, err = filepath.Abs(c.AppPrivateKeyFile); err != nil {
 		return fmt.Errorf("resolve APP_PRIVATE_KEY_FILE: %w", err)
-	}
-	if c.StateDir, err = filepath.Abs(c.StateDir); err != nil {
-		return fmt.Errorf("resolve RUNNER_STATE_DIR: %w", err)
 	}
 	return nil
 }

@@ -83,7 +83,7 @@ func prepareBaseImage(ctx context.Context, cfg config, logger *slog.Logger) (ret
 	}
 
 	logger.Info("Booting base VM for provisioning", "name", stagingVM)
-	vmCommand = exec.Command(cfg.TartBin, tartRunArguments(cfg, stagingVM)...)
+	vmCommand = newTartCommand(context.Background(), cfg, tartRunArguments(cfg, stagingVM)...)
 	vmCommand.Stdout = os.Stdout
 	vmCommand.Stderr = os.Stderr
 	if err := vmCommand.Start(); err != nil {
@@ -95,7 +95,7 @@ func prepareBaseImage(ctx context.Context, cfg config, logger *slog.Logger) (ret
 	}
 
 	logger.Info("Installing GitHub runner, Docker, and Docker Compose", "name", stagingVM)
-	provisionCommand := exec.CommandContext(ctx, cfg.TartBin, "exec", "-i", stagingVM, "/bin/bash", "-s")
+	provisionCommand := newTartCommand(ctx, cfg, "exec", "-i", stagingVM, "/bin/bash", "-s")
 	provisionCommand.Stdin = strings.NewReader(resources.ProvisionGuestScript)
 	provisionCommand.Stdout = os.Stdout
 	provisionCommand.Stderr = os.Stderr

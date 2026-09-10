@@ -112,13 +112,17 @@ func (s *tartScaler) startRunner(ctx context.Context) (_ string, returnedErr err
 		return "", err
 	}
 
-	logPath := filepath.Join(s.cfg.StateDir, name+".vm.log")
+	logDir := filepath.Join(s.cfg.StateDir, "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		return "", fmt.Errorf("create log directory: %w", err)
+	}
+	logPath := filepath.Join(logDir, name+".vm.log")
 	runner.vmLog, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("open VM log: %w", err)
 	}
 	vmArgs := tartRunArguments(s.cfg, name)
-	runner.vmCommand = exec.Command(s.cfg.TartBin, vmArgs...)
+	runner.vmCommand = newTartCommand(context.Background(), s.cfg, vmArgs...)
 	runner.vmCommand.Stdout = runner.vmLog
 	runner.vmCommand.Stderr = runner.vmLog
 	if err := runner.vmCommand.Start(); err != nil {
@@ -142,7 +146,7 @@ func (s *tartScaler) startRunner(ctx context.Context) (_ string, returnedErr err
 		return "", fmt.Errorf("generate JIT runner config: %w", err)
 	}
 
-	runnerCommand := exec.Command(s.cfg.TartBin, "exec", "-i", name, "/bin/bash", "-s")
+	runnerCommand := newTartCommand(context.Background(), s.cfg, "exec", "-i", name, "/bin/bash", "-s")
 	runnerCommand.Stdin = strings.NewReader(
 		"RUNNER_JIT_CONFIG=" + shellQuote(jit.EncodedJITConfig) + "\n" + s.runnerScript,
 	)

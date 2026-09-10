@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 func runTart(ctx context.Context, cfg config, args ...string) error {
-	command := exec.CommandContext(ctx, cfg.TartBin, args...)
+	command := newTartCommand(ctx, cfg, args...)
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	if err := command.Run(); err != nil {
@@ -20,7 +21,7 @@ func runTart(ctx context.Context, cfg config, args ...string) error {
 }
 
 func tartVMExists(ctx context.Context, cfg config, name string) (bool, error) {
-	command := exec.CommandContext(ctx, cfg.TartBin, "list", "--source", "local", "--quiet")
+	command := newTartCommand(ctx, cfg, "list", "--source", "local", "--quiet")
 	output, err := command.Output()
 	if err != nil {
 		return false, fmt.Errorf("list Tart VMs: %w", err)
@@ -40,7 +41,7 @@ func waitForTartGuest(ctx context.Context, cfg config, name string) error {
 	defer ticker.Stop()
 	for {
 		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		command := exec.CommandContext(probeCtx, cfg.TartBin, "exec", name, "/usr/bin/true")
+		command := newTartCommand(probeCtx, cfg, "exec", name, "/usr/bin/true")
 		err := command.Run()
 		cancel()
 		if err == nil {
@@ -54,6 +55,33 @@ func waitForTartGuest(ctx context.Context, cfg config, name string) error {
 		case <-ticker.C:
 		}
 	}
+}
+
+func newTartCommand(ctx context.Context, cfg config, args ...string) *exec.Cmd {
+	command := exec.CommandContext(ctx, cfg.TartBin, args...)
+	if cfg.SoftnetBin == "" {
+		return command
+	}
+	path := filepath.Dir(cfg.SoftnetBin) + string(os.PathListSeparator) + os.Getenv("PATH")
+	command.Env = environmentWithOverrides(map[string]string{
+		"PATH":        path,
+		"SOFTNET_BIN": cfg.SoftnetBin,
+	})
+	return command
+}
+
+func environmentWithOverrides(overrides map[string]string) []string {
+	environment := make([]string, 0, len(os.Environ())+len(overrides))
+	for _, item := range os.Environ() {
+		key, _, _ := strings.Cut(item, "=")
+		if _, replaced := overrides[key]; !replaced {
+			environment = append(environment, item)
+		}
+	}
+	for key, value := range overrides {
+		environment = append(environment, key+"="+value)
+	}
+	return environment
 }
 
 func tartRunArguments(cfg config, name string) []string {

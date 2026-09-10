@@ -19,14 +19,24 @@ const controllerVersion = "1"
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := run(ctx); err != nil {
+	var err error
+	switch {
+	case len(os.Args) == 1:
+		err = run(ctx)
+	case len(os.Args) == 2 && os.Args[1] == "setup":
+		err = setup(ctx)
+	default:
+		fmt.Fprintf(os.Stderr, "usage: %s [setup]\n", os.Args[0])
+		os.Exit(2)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context) error {
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(ctx)
 	if err != nil {
 		return fmt.Errorf("configuration: %w", err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -27,10 +28,11 @@ func TestLoadConfigFromEnvironment(t *testing.T) {
 	t.Setenv("XCODE_APP_PATH", "none")
 	t.Setenv("APP_PRIVATE_KEY_FILE", "key.pem")
 	t.Setenv("RUNNER_STATE_DIR", ".state")
+	t.Setenv("TART_NETWORK_MODE", "shared")
 	t.Setenv("RUNNER_MIN_COUNT", "2")
 	t.Setenv("RUNNER_MAX_COUNT", "4")
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
