@@ -64,6 +64,23 @@ func TestResolveStateDirExpandsHome(t *testing.T) {
 	}
 }
 
+func TestResolveRuntimePathsUsesStateDirForAutoPrivateKey(t *testing.T) {
+	stateDir := t.TempDir()
+	cfg := config{
+		AppPrivateKeyFile: "auto",
+		StateDir:          stateDir,
+		XcodeAppPath:      "none",
+	}
+
+	if err := cfg.resolveRuntimePaths(); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(stateDir, "private-key.pem")
+	if cfg.AppPrivateKeyFile != want {
+		t.Fatalf("appPrivateKeyFile = %q, want %q", cfg.AppPrivateKeyFile, want)
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	got := shellQuote("abc'def")
 	want := `'abc'\''def'`

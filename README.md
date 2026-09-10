@@ -24,8 +24,8 @@ curl -fsSL https://github.com/xtool-org/mac-actions-runner/releases/download/con
 ### Install GitHub App
 
 1. Create a GitHub App on the target organization with organization self-hosted runner read/write permission
-2. Save the private key to `./runner-private-key.pem`
-3. Protect the App private key: `chmod 600 runner-private-key.pem`
+2. Save the private key to `~/.config/tartscaleset/private-key.pem`
+3. Protect the App private key: `chmod 600 ~/.config/tartscaleset/private-key.pem`
 
 The scale-set controller discovers the App installation ID automatically from
 `APP_ID`, `ORG_NAME`, and the private key.
@@ -75,7 +75,7 @@ From the desired working directory, inject any configuration and run it. The
 first invocation performs the one-time network setup if needed:
 
 ```bash
-export APP_PRIVATE_KEY_FILE=/secure/path/runner-private-key.pem
+export APP_PRIVATE_KEY_FILE=/secure/path/private-key.pem
 ./tartscaleset
 ```
 

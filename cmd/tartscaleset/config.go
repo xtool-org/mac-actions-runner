@@ -16,7 +16,7 @@ import (
 
 type config struct {
 	AppID             string   `env:"APP_ID" envDefault:"4891121"`
-	AppPrivateKeyFile string   `env:"APP_PRIVATE_KEY_FILE" envDefault:"./runner-private-key.pem"`
+	AppPrivateKeyFile string   `env:"APP_PRIVATE_KEY_FILE" envDefault:"auto"`
 	GitHubAPIURL      string   `env:"GITHUB_API_URL" envDefault:"https://api.github.com"`
 	GitHubRunnerURL   string   `env:"GITHUB_RUNNER_URL" envDefault:"auto"`
 	OrgName           string   `env:"ORG_NAME" envDefault:"xtool-org"`
@@ -134,9 +134,14 @@ func (c *config) resolveRuntimePaths() error {
 		}
 		c.XcodeAppPath = strings.TrimSuffix(developerDir, suffix)
 	}
-	var err error
-	if c.AppPrivateKeyFile, err = filepath.Abs(c.AppPrivateKeyFile); err != nil {
-		return fmt.Errorf("resolve APP_PRIVATE_KEY_FILE: %w", err)
+	if c.AppPrivateKeyFile == "auto" {
+		c.AppPrivateKeyFile = filepath.Join(c.StateDir, "private-key.pem")
+	} else {
+		appPrivateKeyFile, err := filepath.Abs(c.AppPrivateKeyFile)
+		if err != nil {
+			return fmt.Errorf("resolve APP_PRIVATE_KEY_FILE: %w", err)
+		}
+		c.AppPrivateKeyFile = appPrivateKeyFile
 	}
 	return nil
 }
