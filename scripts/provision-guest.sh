@@ -14,12 +14,14 @@ export DEBIAN_FRONTEND=noninteractive
 "${sudo_command[@]}" apt-get install -y \
   ca-certificates \
   curl \
+  docker-compose-v2 \
   docker.io \
   git \
   jq
 
 "${sudo_command[@]}" systemctl enable --now docker
 "${sudo_command[@]}" usermod -aG docker admin
+docker compose version
 "${sudo_command[@]}" install -d -o admin -g admin /opt/actions-runner
 
 release_json="$(curl -fsSL \
@@ -56,4 +58,4 @@ rm -f "${runner_archive}"
 "${sudo_command[@]}" apt-get clean
 sync
 
-echo "Provisioned GitHub Actions runner ${runner_version} with an isolated Docker daemon."
+echo "Provisioned GitHub Actions runner ${runner_version} with Docker and Docker Compose."

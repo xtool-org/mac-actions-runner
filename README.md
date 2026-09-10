@@ -36,7 +36,8 @@ Run `./scripts/setup-softnet.sh` to configure VM network isolation.
 
 On first run, we download an Ubuntu ARM64 Tart image and provision a reusable
 local base VM. The image has a minimum size of 20 GB and is expanded to 50 GB by
-default.
+default. `prepare-image.sh` records its `image_version` in `.state`; bumping that
+constant rebuilds an outdated base VM the next time `run.sh` starts.
 
 `run.sh` keeps one clean runner waiting for a job. After the job, it stops and
 deletes the VM, then clones another one from the base.
@@ -56,13 +57,14 @@ jobs:
       - run: uname -a
 ```
 
-Docker is installed inside the Linux guest. Workflow Docker commands talk to
-that disposable guest daemon; we don't need or use Docker from the macOS host.
+Docker and the Docker Compose v2 plugin are installed inside the Linux guest.
+Workflow `docker` and `docker compose` commands talk to that disposable guest
+daemon; we don't need or use Docker from the macOS host.
 
 ## Xcode share
 
 Each runner receives a read-only VirtioFS mount of the host's Xcode bundle at
-`/usr/share/Xcode.app`. The default `XCODE_APP_PATH=auto` derives the host path
+`/usr/local/share/Xcode.app`. The default `XCODE_APP_PATH=auto` derives the host path
 from `xcode-select -p`. Override it in `runner.env` when needed:
 
 ```bash

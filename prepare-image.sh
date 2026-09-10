@@ -2,6 +2,8 @@
 
 set -euo pipefail
 
+image_version=1
+
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "${project_dir}"
 
@@ -12,9 +14,28 @@ TART_BIN="$("${project_dir}/scripts/ensure-tart.sh")"
 export TART_BIN
 configure_network_helper
 
+mkdir -p "${project_dir}/.state"
+image_version_file="${project_dir}/.state/${TART_BASE_VM}.image-version"
+installed_image_version=""
+if [[ -f "${image_version_file}" ]]; then
+  IFS= read -r installed_image_version <"${image_version_file}" || true
+fi
+
+base_vm_exists=false
 if vm_exists "${TART_BASE_VM}"; then
-  echo "Base VM ${TART_BASE_VM} already exists."
-  exit 0
+  base_vm_exists=true
+  if [[ "${installed_image_version}" == "${image_version}" ]]; then
+    echo "Base VM ${TART_BASE_VM} is current at image version ${image_version}."
+    exit 0
+  fi
+
+  if [[ -n "${installed_image_version}" ]]; then
+    echo "Base VM ${TART_BASE_VM} image version ${installed_image_version} is outdated; rebuilding version ${image_version}."
+  else
+    echo "Base VM ${TART_BASE_VM} has no image version; rebuilding version ${image_version}."
+  fi
+else
+  echo "Base VM ${TART_BASE_VM} does not exist; building image version ${image_version}."
 fi
 
 staging_vm="${TART_BASE_VM}-preparing-$$"
@@ -74,7 +95,7 @@ if ! wait_for_guest "${staging_vm}" "${VM_READY_TIMEOUT_SECONDS}"; then
   exit 1
 fi
 
-echo "Installing the GitHub runner and Docker inside the base VM."
+echo "Installing the GitHub runner, Docker, and Docker Compose inside the base VM."
 "${TART_BIN}" exec -i "${staging_vm}" /bin/bash -s \
   <"${project_dir}/scripts/provision-guest.sh"
 "${TART_BIN}" exec "${staging_vm}" /bin/sync
@@ -83,7 +104,11 @@ echo "Installing the GitHub runner and Docker inside the base VM."
 wait "${tart_pid}" 2>/dev/null || true
 tart_pid=""
 
+if [[ "${base_vm_exists}" == true ]]; then
+  "${TART_BIN}" delete "${TART_BASE_VM}"
+fi
 "${TART_BIN}" rename "${staging_vm}" "${TART_BASE_VM}"
 published=true
+printf '%s\n' "${image_version}" >"${image_version_file}"
 
-echo "Base VM ${TART_BASE_VM} is ready."
+echo "Base VM ${TART_BASE_VM} image version ${image_version} is ready."

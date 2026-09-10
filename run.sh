@@ -34,10 +34,7 @@ if [[ ! -f "${APP_PRIVATE_KEY_FILE}" ]]; then
   exit 1
 fi
 
-if ! vm_exists "${TART_BASE_VM}"; then
-  echo "Base VM ${TART_BASE_VM} does not exist; preparing it now."
-  bash "${project_dir}/prepare-image.sh"
-fi
+bash "${project_dir}/prepare-image.sh"
 
 mkdir -p "${project_dir}/.state"
 
@@ -130,12 +127,12 @@ while true; do
   fi
 
   if [[ -n "${XCODE_APP_PATH}" ]]; then
-    echo "Mounting ${XCODE_APP_PATH} read-only at /usr/share/Xcode.app."
+    echo "Mounting ${XCODE_APP_PATH} read-only at /usr/local/share/Xcode.app."
     if ! "${TART_BIN}" exec "${current_vm}" /bin/bash -c '
       set -e
-      sudo -n install -d -o root -g root /usr/share/Xcode.app
-      sudo -n mount -t virtiofs -o ro xcode /usr/share/Xcode.app
-      test -d /usr/share/Xcode.app/Contents/Developer
+      sudo -n install -d -o root -g root /usr/local/share/Xcode.app
+      sudo -n mount -t virtiofs -o ro xcode /usr/local/share/Xcode.app
+      test -d /usr/local/share/Xcode.app/Contents/Developer
     '; then
       echo "Could not mount the Xcode app inside the guest." >&2
       exit 1
