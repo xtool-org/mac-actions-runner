@@ -75,7 +75,7 @@ func loadConfig(ctx context.Context) (config, error) {
 		if err != nil {
 			return config{}, err
 		}
-		if err := requirePrivilegedSoftnet(cfg.SoftnetBin); err != nil {
+		if err := ensurePrivilegedSoftnet(ctx, cfg.SoftnetBin); err != nil {
 			return config{}, err
 		}
 	}

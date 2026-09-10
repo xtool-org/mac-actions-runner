@@ -22,20 +22,6 @@ The scale-set controller discovers the App installation ID automatically from
 `APP_ID`, `ORG_NAME`, and the private key; it does not require Python or
 OpenSSL.
 
-### Set up networking (requires sudo)
-
-Run the one-time Softnet setup:
-
-```bash
-tartscaleset setup
-```
-
-This downloads the pinned Softnet binary into `.state/tools`, then uses `sudo`
-to make that one executable root-owned and setuid as required by Tart.
-
-> [!TIP]
-> If you don't have `sudo` access, export `TART_NETWORK_MODE=shared`.
-
 ## Run
 
 ```bash
@@ -51,9 +37,9 @@ no system or Homebrew installation is required. On first run, it also downloads
 an Ubuntu ARM64 Tart image and provisions a reusable local base VM. The image has
 a minimum size of 20 GB and is expanded to 50 GB by default. Its embedded image
 version is recorded in `.state`; bumping `baseImageVersion` rebuilds an outdated
-base VM the next time `run.sh` starts.
+base VM the next time `tartscaleset` starts.
 
-`run.sh` starts a GitHub Actions runner scale-set listener backed by Tart. It
+`tartscaleset` starts a GitHub Actions runner scale-set listener backed by Tart. It
 keeps one clean runner waiting by default, generates a JIT configuration for
 each runner, and deletes its disposable VM when the job completes. Set
 `RUNNER_MIN_COUNT` and `RUNNER_MAX_COUNT` to change capacity.
@@ -76,12 +62,11 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
 ```
 
 Copy only `tartscaleset` to the destination Mac; the repository is not needed.
-From the desired working directory, inject any configuration, perform the
-one-time network setup, and run it:
+From the desired working directory, inject any configuration and run it. The
+first invocation performs the one-time network setup if needed:
 
 ```bash
 export APP_PRIVATE_KEY_FILE=/secure/path/runner-private-key.pem
-./tartscaleset setup
 ./tartscaleset
 ```
 
@@ -137,14 +122,15 @@ binaries.
 
 Softnet networking is the default and blocks guest access to private IPv4
 networks. The controller pins Softnet and verifies its SHA-256 checksum.
-Configure its narrowly scoped host privileges once:
+Standard startup configures its narrowly scoped host privileges when needed. It
+can also be done separately:
 
 ```bash
-./run.sh setup
+tartscaleset setup
 ```
 
 This prompts for your macOS administrator password to make only the pinned
 Softnet executable root-owned with its setuid bit enabled. Continue to run
-`./run.sh` as your normal user. The disposable VM boundary does not depend on
+`tartscaleset` as your normal user. The disposable VM boundary does not depend on
 Softnet. Set `TART_NETWORK_MODE=shared` to opt out of Softnet
 filtering, or use `TART_SOFTNET_ALLOW` to allow specific private CIDRs.

@@ -192,9 +192,15 @@ func setup(ctx context.Context) error {
 		fmt.Println("Softnet is already configured:", cfg.SoftnetBin)
 		return nil
 	}
+	return ensurePrivilegedSoftnet(ctx, cfg.SoftnetBin)
+}
 
+func ensurePrivilegedSoftnet(ctx context.Context, path string) error {
+	if requirePrivilegedSoftnet(path) == nil {
+		return nil
+	}
 	fmt.Println("Configuring Softnet with the root ownership and setuid bit required by Tart.")
-	commands := [][]string{{"/usr/sbin/chown", "root:wheel", cfg.SoftnetBin}, {"/bin/chmod", "u+s", cfg.SoftnetBin}}
+	commands := [][]string{{"/usr/sbin/chown", "root:wheel", path}, {"/bin/chmod", "u+s", path}}
 	for _, arguments := range commands {
 		name, args := arguments[0], arguments[1:]
 		if os.Geteuid() != 0 {
@@ -207,10 +213,10 @@ func setup(ctx context.Context) error {
 			return fmt.Errorf("configure Softnet: %w", err)
 		}
 	}
-	if err := requirePrivilegedSoftnet(cfg.SoftnetBin); err != nil {
+	if err := requirePrivilegedSoftnet(path); err != nil {
 		return err
 	}
-	fmt.Println("Softnet is configured:", cfg.SoftnetBin)
+	fmt.Println("Softnet is configured:", path)
 	return nil
 }
 

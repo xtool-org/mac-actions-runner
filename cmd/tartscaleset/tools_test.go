@@ -4,8 +4,10 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -33,6 +35,19 @@ func TestExtractTarGzipRejectsTraversal(t *testing.T) {
 	}
 	if err := extractTarGzip(archivePath, t.TempDir()); err == nil {
 		t.Fatal("extractTarGzip accepted a path traversal entry")
+	}
+}
+
+func TestEnsurePrivilegedSoftnetAttemptsSetup(t *testing.T) {
+	softnet := filepath.Join(t.TempDir(), "softnet")
+	if err := os.WriteFile(softnet, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := ensurePrivilegedSoftnet(ctx, softnet)
+	if err == nil || !strings.Contains(err.Error(), "configure Softnet") {
+		t.Fatalf("ensurePrivilegedSoftnet() error = %v, want setup attempt", err)
 	}
 }
 

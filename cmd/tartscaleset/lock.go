@@ -15,10 +15,11 @@ type processLock struct {
 }
 
 func acquireControllerLock(cfg config) (*processLock, error) {
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
+	controllersDir := filepath.Join(cfg.StateDir, "controllers")
+	if err := os.MkdirAll(controllersDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create state directory: %w", err)
 	}
-	path := filepath.Join(cfg.StateDir, "controller-"+stateKey(cfg.ScaleSetName)+".lock")
+	path := filepath.Join(controllersDir, "controller-"+stateKey(cfg.ScaleSetName)+".lock")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open controller lock: %w", err)
