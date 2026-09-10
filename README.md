@@ -40,12 +40,13 @@ tartscaleset
 
 (The copy from hereon out is unreviewed / slop)
 
-The controller downloads pinned Tart and Softnet releases into `.state/tools`;
+The controller downloads pinned Tart and Softnet releases into
+`~/.config/tartscaleset/tools`;
 no system or Homebrew installation is required. On first run, it also downloads
 an Ubuntu ARM64 Tart image and provisions a reusable local base VM. The image has
 a minimum size of 20 GB and is expanded to 50 GB by default. Its embedded image
-version is recorded in `.state`; bumping `baseImageVersion` rebuilds an outdated
-base VM the next time `tartscaleset` starts.
+version is recorded in `~/.config/tartscaleset`; bumping `baseImageVersion`
+rebuilds an outdated base VM the next time `tartscaleset` starts.
 
 `tartscaleset` starts a GitHub Actions runner scale-set listener backed by Tart. It
 keeps one clean runner waiting by default, generates a JIT configuration for
@@ -78,14 +79,14 @@ export APP_PRIVATE_KEY_FILE=/secure/path/runner-private-key.pem
 ./tartscaleset
 ```
 
-The binary creates `.state/tools` beside that working directory by default.
-Override the root with `RUNNER_STATE_DIR`; `TART_BIN` and `SOFTNET_BIN` can still
-select externally managed executables.
+The binary uses `~/.config/tartscaleset` for state by default. Override the root
+with `RUNNER_STATE_DIR`; `TART_BIN` and `SOFTNET_BIN` can still select externally
+managed executables.
 
 Press Ctrl+C to stop the listener. Shutdown deletes its runner VMs, message
 session, and scale set. After an unclean host shutdown, the next start cleans
 VMs recorded by the previous controller before accepting work. Tart VM output
-is written under `.state/logs`.
+is written under `~/.config/tartscaleset/logs`.
 
 Configuration comes from process environment variables, parsed with
 [`caarlos0/env`](https://github.com/caarlos0/env). All settings have built-in

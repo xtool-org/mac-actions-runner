@@ -36,7 +36,7 @@ type config struct {
 	TartSoftnetAllow  string   `env:"TART_SOFTNET_ALLOW"`
 	SoftnetBin        string   `env:"SOFTNET_BIN" envDefault:"auto"`
 	XcodeAppPath      string   `env:"XCODE_APP_PATH" envDefault:"auto"`
-	StateDir          string   `env:"RUNNER_STATE_DIR" envDefault:".state"`
+	StateDir          string   `env:"RUNNER_STATE_DIR" envDefault:"~/.config/tartscaleset"`
 	VMReadyTimeoutSec int      `env:"VM_READY_TIMEOUT_SECONDS" envDefault:"180"`
 }
 
@@ -99,7 +99,15 @@ func trimStrings(values []string) []string {
 }
 
 func (c *config) resolveStateDir() error {
-	stateDir, err := filepath.Abs(c.StateDir)
+	stateDir := c.StateDir
+	if stateDir == "~" || strings.HasPrefix(stateDir, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return fmt.Errorf("resolve home directory: %w", err)
+		}
+		stateDir = filepath.Join(homeDir, strings.TrimPrefix(stateDir, "~/"))
+	}
+	stateDir, err := filepath.Abs(stateDir)
 	if err != nil {
 		return fmt.Errorf("resolve RUNNER_STATE_DIR: %w", err)
 	}

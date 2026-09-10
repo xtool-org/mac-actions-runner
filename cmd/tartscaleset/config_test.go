@@ -50,6 +50,20 @@ func TestLoadConfigFromEnvironment(t *testing.T) {
 	}
 }
 
+func TestResolveStateDirExpandsHome(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	cfg := config{StateDir: "~/.config/tartscaleset"}
+
+	if err := cfg.resolveStateDir(); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(homeDir, ".config", "tartscaleset")
+	if cfg.StateDir != want {
+		t.Fatalf("stateDir = %q, want %q", cfg.StateDir, want)
+	}
+}
+
 func TestShellQuote(t *testing.T) {
 	got := shellQuote("abc'def")
 	want := `'abc'\''def'`
