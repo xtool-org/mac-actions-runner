@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const macOSSystemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+
 func runTart(ctx context.Context, cfg config, args ...string) error {
 	command := newTartCommand(ctx, cfg, args...)
 	command.Stdout = os.Stdout
@@ -59,14 +61,14 @@ func waitForTartGuest(ctx context.Context, cfg config, name string) error {
 
 func newTartCommand(ctx context.Context, cfg config, args ...string) *exec.Cmd {
 	command := exec.CommandContext(ctx, cfg.TartBin, args...)
-	if cfg.SoftnetBin == "" {
-		return command
+	path := macOSSystemPath
+	overrides := map[string]string{"PATH": path}
+	if cfg.SoftnetBin != "" {
+		path = filepath.Dir(cfg.SoftnetBin) + string(os.PathListSeparator) + path
+		overrides["PATH"] = path
+		overrides["SOFTNET_BIN"] = cfg.SoftnetBin
 	}
-	path := filepath.Dir(cfg.SoftnetBin) + string(os.PathListSeparator) + os.Getenv("PATH")
-	command.Env = environmentWithOverrides(map[string]string{
-		"PATH":        path,
-		"SOFTNET_BIN": cfg.SoftnetBin,
-	})
+	command.Env = environmentWithOverrides(overrides)
 	return command
 }
 

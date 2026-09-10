@@ -32,6 +32,7 @@ func TestRenderLaunchAgentPlist(t *testing.T) {
 
 func TestConfiguredLaunchEnvironmentExcludesUnrecognizedVariables(t *testing.T) {
 	t.Setenv("APP_ID", "1234")
+	t.Setenv("PATH", "/unexpected/shell/path")
 	t.Setenv("UNRELATED_SECRET", "do-not-copy")
 
 	environment := configuredLaunchEnvironment()
@@ -40,5 +41,8 @@ func TestConfiguredLaunchEnvironmentExcludesUnrecognizedVariables(t *testing.T) 
 	}
 	if _, ok := environment["UNRELATED_SECRET"]; ok {
 		t.Fatal("unrecognized environment variable was captured")
+	}
+	if _, ok := environment["PATH"]; ok {
+		t.Fatal("shell PATH was captured")
 	}
 }

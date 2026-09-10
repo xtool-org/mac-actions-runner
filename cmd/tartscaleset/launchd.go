@@ -67,9 +67,6 @@ func registerLaunchAgent(ctx context.Context) error {
 
 	environment := configuredLaunchEnvironment()
 	environment["HOME"] = homeDir
-	if path := os.Getenv("PATH"); path != "" {
-		environment["PATH"] = path
-	}
 	plistPath := filepath.Join(launchAgentsDir, launchAgentLabel+".plist")
 	plist := renderLaunchAgentPlist(launchAgentConfig{
 		Executable:        executable,
