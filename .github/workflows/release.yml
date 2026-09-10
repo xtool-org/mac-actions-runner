@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: macos-26
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build Apple Silicon runner
+        env:
+          GOOS: darwin
+          GOARCH: arm64
+        run: make build
+
+      - name: Package runner
+        run: |
+          set -euo pipefail
+          mv out/tartscaleset out/tartscaleset-darwin-arm64
+          tar -C out -czf out/tartscaleset-darwin-arm64.tar.gz tartscaleset-darwin-arm64
+          cd out
+          shasum -a 256 tartscaleset-darwin-arm64.tar.gz > tartscaleset-darwin-arm64.tar.gz.sha256
+
+      - name: Update continuous release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag=continuous
+          title="Continuous"
+          notes="Automated Apple Silicon build from commit ${GITHUB_SHA}."
+
+          git tag --force "$tag" "$GITHUB_SHA"
+          git push --force origin "refs/tags/$tag"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              out/tartscaleset-darwin-arm64.tar.gz \
+              out/tartscaleset-darwin-arm64.tar.gz.sha256 \
+              --clobber
+            gh release edit "$tag" \
+              --title "$title" \
+              --notes "$notes" \
+              --prerelease
+          else
+            gh release create "$tag" \
+              out/tartscaleset-darwin-arm64.tar.gz \
+              out/tartscaleset-darwin-arm64.tar.gz.sha256 \
+              --verify-tag \
+              --title "$title" \
+              --notes "$notes" \
+              --prerelease \
+              --latest=false
+          fi
