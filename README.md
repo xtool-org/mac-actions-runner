@@ -32,6 +32,14 @@ The scale-set controller discovers the App installation ID automatically from
 
 ## Run
 
+Register as a LaunchAgent:
+
+```bash
+tartscaleset register # use unregister to disable
+```
+
+Or run in the foreground:
+
 ```bash
 tartscaleset
 ```

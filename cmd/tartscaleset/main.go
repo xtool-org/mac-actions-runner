@@ -25,8 +25,12 @@ func main() {
 		err = run(ctx)
 	case len(os.Args) == 2 && os.Args[1] == "setup":
 		err = setup(ctx)
+	case len(os.Args) == 2 && os.Args[1] == "register":
+		err = registerLaunchAgent(ctx)
+	case len(os.Args) == 2 && os.Args[1] == "unregister":
+		err = unregisterLaunchAgent(ctx)
 	default:
-		fmt.Fprintf(os.Stderr, "usage: %s [setup]\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s [setup|register|unregister]\n", os.Args[0])
 		os.Exit(2)
 	}
 	if err != nil {
