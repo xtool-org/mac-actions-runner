@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Mint a short-lived GitHub Actions runner registration token."""
+"""Authenticate GitHub Actions runner lifecycle operations with a GitHub App."""
 
 from __future__ import annotations
 
@@ -82,7 +82,8 @@ def github_request(
 
     try:
         with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
+            body = response.read()
+            return json.loads(body) if body else {}
     except urllib.error.HTTPError as error:
         body = error.read().decode("utf-8", errors="replace")
         try:
@@ -96,7 +97,7 @@ def github_request(
         raise RuntimeError(f"GitHub API {method} {path} failed: {error.reason}") from error
 
 
-def registration_token(args: argparse.Namespace) -> str:
+def installation_token(args: argparse.Namespace) -> str:
     app_jwt = github_app_jwt(args.app_id, args.private_key)
     org = urllib.parse.quote(args.org, safe="")
     installation = github_request(
@@ -118,17 +119,66 @@ def registration_token(args: argparse.Namespace) -> str:
     installation_token = installation_auth.get("token")
     if not installation_token:
         raise RuntimeError("GitHub did not return an installation access token")
+    return installation_token
+
+
+def registration_token(args: argparse.Namespace) -> str:
+    org = urllib.parse.quote(args.org, safe="")
+    token = installation_token(args)
 
     runner_auth = github_request(
         args.api_url,
         "POST",
         f"/orgs/{org}/actions/runners/registration-token",
-        installation_token,
+        token,
     )
     token = runner_auth.get("token")
     if not token:
         raise RuntimeError("GitHub did not return a runner registration token")
     return token
+
+
+def deregister_runner(args: argparse.Namespace) -> None:
+    org = urllib.parse.quote(args.org, safe="")
+    token = installation_token(args)
+    query = urllib.parse.urlencode({"name": args.name, "per_page": 100})
+    runner_list = github_request(
+        args.api_url,
+        "GET",
+        f"/orgs/{org}/actions/runners?{query}",
+        token,
+    )
+    matching_runners = [
+        runner
+        for runner in runner_list.get("runners", [])
+        if runner.get("name") == args.name
+    ]
+
+    if not matching_runners:
+        print(f"GitHub runner {args.name} is already deregistered.")
+        return
+    if len(matching_runners) > 1:
+        raise RuntimeError(
+            f"GitHub returned multiple runners named {args.name}; refusing to delete"
+        )
+
+    runner_id = matching_runners[0].get("id")
+    if not isinstance(runner_id, int):
+        raise RuntimeError(f"GitHub did not return an ID for runner {args.name}")
+    github_request(
+        args.api_url,
+        "DELETE",
+        f"/orgs/{org}/actions/runners/{runner_id}",
+        token,
+    )
+    print(f"Deregistered GitHub runner {args.name}.")
+
+
+def add_auth_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--app-id", required=True)
+    parser.add_argument("--org", required=True)
+    parser.add_argument("--private-key", required=True, type=Path)
+    parser.add_argument("--api-url", default="https://api.github.com")
 
 
 def parse_args() -> argparse.Namespace:
@@ -138,15 +188,18 @@ def parse_args() -> argparse.Namespace:
         "registration-token",
         help="print a new organization runner registration token",
     )
-    token_parser.add_argument("--app-id", required=True)
-    token_parser.add_argument("--org", required=True)
-    token_parser.add_argument("--private-key", required=True, type=Path)
-    token_parser.add_argument("--api-url", default="https://api.github.com")
+    add_auth_arguments(token_parser)
     token_parser.add_argument(
         "--check",
         action="store_true",
         help="verify authentication without printing the registration token",
     )
+    deregister_parser = subparsers.add_parser(
+        "deregister-runner",
+        help="remove an organization runner by its exact name",
+    )
+    add_auth_arguments(deregister_parser)
+    deregister_parser.add_argument("--name", required=True)
     return parser.parse_args()
 
 
@@ -159,6 +212,9 @@ def main() -> int:
                 print("GitHub App authentication succeeded.")
             else:
                 print(token)
+            return 0
+        if args.command == "deregister-runner":
+            deregister_runner(args)
             return 0
     except RuntimeError as error:
         print(f"error: {error}", file=sys.stderr)

@@ -43,6 +43,8 @@ mkdir -p "${project_dir}/.state"
 
 current_vm=""
 tart_pid=""
+runner_name=""
+runner_may_be_registered=false
 
 cleanup_current_vm() {
   if [[ -z "${current_vm}" ]]; then
@@ -56,12 +58,27 @@ cleanup_current_vm() {
     wait "${tart_pid}" 2>/dev/null || true
   fi
 
+  if [[ "${runner_may_be_registered}" == true ]]; then
+    echo "Deregistering GitHub runner ${runner_name}."
+    if ! python3 "${project_dir}/scripts/github_auth.py" \
+      deregister-runner \
+      --app-id "${APP_ID}" \
+      --org "${ORG_NAME}" \
+      --private-key "${APP_PRIVATE_KEY_FILE}" \
+      --api-url "${GITHUB_API_URL}" \
+      --name "${runner_name}"; then
+      echo "Warning: could not deregister GitHub runner ${runner_name}." >&2
+    fi
+  fi
+
   if vm_exists "${current_vm}"; then
     "${TART_BIN}" delete "${current_vm}"
   fi
 
   current_vm=""
   tart_pid=""
+  runner_name=""
+  runner_may_be_registered=false
 }
 
 trap cleanup_current_vm EXIT
@@ -134,6 +151,7 @@ while true; do
     --api-url "${GITHUB_API_URL}")"
 
   echo "Starting ephemeral runner ${runner_name}."
+  runner_may_be_registered=true
   set +e
   {
     printf 'RUNNER_URL=%q\n' "${GITHUB_RUNNER_URL}"

@@ -41,7 +41,9 @@ default.
 `run.sh` keeps one clean runner waiting for a job. After the job, it stops and
 deletes the VM, then clones another one from the base.
 
-Press Ctrl+C to stop the loop.
+Press Ctrl+C to stop the loop. Shutdown explicitly deregisters the current
+runner from GitHub before deleting its VM; this is also a fallback for abnormal
+runner exits where GitHub's normal ephemeral-runner cleanup did not happen.
 
 Target it from a workflow with:
 
