@@ -12,6 +12,15 @@ Spins up isolated Linux GitHub Actions runners on a macOS host, for xtool.
 
 ## Setup
 
+### Install tartscaleset
+
+Install the [latest continuous release](https://github.com/xtool-org/mac-actions-runner/releases/tag/continuous):
+
+```bash
+curl -fsSL https://github.com/xtool-org/mac-actions-runner/releases/download/continuous/tartscaleset-darwin-arm64.tar.gz \
+| sudo tar -xz -C /usr/local/bin
+```
+
 ### Install GitHub App
 
 1. Create a GitHub App on the target organization with organization self-hosted runner read/write permission
@@ -19,8 +28,7 @@ Spins up isolated Linux GitHub Actions runners on a macOS host, for xtool.
 3. Protect the App private key: `chmod 600 runner-private-key.pem`
 
 The scale-set controller discovers the App installation ID automatically from
-`APP_ID`, `ORG_NAME`, and the private key; it does not require Python or
-OpenSSL.
+`APP_ID`, `ORG_NAME`, and the private key.
 
 ## Run
 

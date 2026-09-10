@@ -6,3 +6,7 @@ build:
 .PHONY: run
 run: build
 	@./out/tartscaleset
+
+.PHONY: test
+test:
+	go test -race ./...

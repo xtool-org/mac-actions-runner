@@ -27,16 +27,12 @@ jobs:
           cache: true
 
       - name: Build Apple Silicon runner
-        env:
-          GOOS: darwin
-          GOARCH: arm64
-        run: make build
+        run: make build test
 
       - name: Package runner
         run: |
           set -euo pipefail
-          mv out/tartscaleset out/tartscaleset-darwin-arm64
-          tar -C out -czf out/tartscaleset-darwin-arm64.tar.gz tartscaleset-darwin-arm64
+          tar -C out -czf out/tartscaleset-darwin-arm64.tar.gz tartscaleset
           cd out
           shasum -a 256 tartscaleset-darwin-arm64.tar.gz > tartscaleset-darwin-arm64.tar.gz.sha256
 
