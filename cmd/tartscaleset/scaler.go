@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/actions/scaleset"
@@ -19,7 +21,11 @@ import (
 )
 
 type tartScaler struct {
+	ctx            context.Context
+	cancel         context.CancelFunc
 	cfg            config
+	scaleMu        sync.Mutex
+	desiredCount   int
 	runners        runnerState
 	scaleSetID     int
 	scalesetClient *scaleset.Client
@@ -28,16 +34,20 @@ type tartScaler struct {
 }
 
 type runnerVM struct {
-	name       string
-	busy       bool
-	vmCommand  *exec.Cmd
-	vmDone     <-chan error
-	runnerDone <-chan error
-	vmLog      *os.File
+	name          string
+	busy          bool
+	vmCommand     *exec.Cmd
+	vmDone        <-chan error
+	runnerCommand *exec.Cmd
+	runnerDone    <-chan error
+	vmLog         *os.File
 }
 
-func newTartScaler(cfg config, client *scaleset.Client, scaleSetID int, logger *slog.Logger) (*tartScaler, error) {
+func newTartScaler(ctx context.Context, cfg config, client *scaleset.Client, scaleSetID int, logger *slog.Logger) (*tartScaler, error) {
+	monitorCtx, cancel := context.WithCancel(ctx)
 	scaler := &tartScaler{
+		ctx:            monitorCtx,
+		cancel:         cancel,
 		cfg:            cfg,
 		runners:        newRunnerState(),
 		scaleSetID:     scaleSetID,
@@ -46,14 +56,41 @@ func newTartScaler(cfg config, client *scaleset.Client, scaleSetID int, logger *
 		logger:         logger,
 	}
 	if err := scaler.cleanupOrphanedVMs(context.Background()); err != nil {
+		cancel()
 		return nil, err
 	}
+	go scaler.reconcile()
 	return scaler, nil
 }
 
+func (s *tartScaler) reconcile() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		s.scaleMu.Lock()
+		_, err := s.scaleUpLocked(s.ctx)
+		s.scaleMu.Unlock()
+		if err != nil && s.ctx.Err() == nil {
+			s.logger.Error("Failed to reconcile runner count", "error", err)
+		}
+	}
+}
+
 func (s *tartScaler) HandleDesiredRunnerCount(ctx context.Context, count int) (int, error) {
+	s.scaleMu.Lock()
+	defer s.scaleMu.Unlock()
+	s.desiredCount = count
+	return s.scaleUpLocked(ctx)
+}
+
+func (s *tartScaler) scaleUpLocked(ctx context.Context) (int, error) {
 	currentCount := s.runners.count()
-	targetCount := min(s.cfg.MaxRunners, s.cfg.MinRunners+count)
+	targetCount := min(s.cfg.MaxRunners, s.cfg.MinRunners+s.desiredCount)
 	if targetCount <= currentCount {
 		return currentCount, nil
 	}
@@ -75,9 +112,9 @@ func (s *tartScaler) HandleJobStarted(_ context.Context, job *scaleset.JobStarte
 	return nil
 }
 
-func (s *tartScaler) HandleJobCompleted(ctx context.Context, job *scaleset.JobCompleted) error {
+func (s *tartScaler) HandleJobCompleted(_ context.Context, job *scaleset.JobCompleted) error {
 	s.logger.Info("Job completed", "runner", job.RunnerName, "jobId", job.JobID, "result", job.Result)
-	return s.removeRunner(ctx, job.RunnerName)
+	return s.replaceRunner(job.RunnerName)
 }
 
 func (s *tartScaler) startRunner(ctx context.Context) (_ string, returnedErr error) {
@@ -146,34 +183,120 @@ func (s *tartScaler) startRunner(ctx context.Context) (_ string, returnedErr err
 		return "", fmt.Errorf("generate JIT runner config: %w", err)
 	}
 
-	runnerCommand := newTartCommand(context.Background(), s.cfg, "exec", "-i", name, "/bin/bash", "-s")
-	runnerCommand.Stdin = strings.NewReader(
+	runner.runnerCommand = newTartCommand(context.Background(), s.cfg, "exec", "-i", name, "/bin/bash", "-s")
+	runner.runnerCommand.Stdin = strings.NewReader(
 		"RUNNER_JIT_CONFIG=" + shellQuote(jit.EncodedJITConfig) + "\n" + s.runnerScript,
 	)
-	runnerCommand.Stdout = os.Stdout
-	runnerCommand.Stderr = os.Stderr
-	if err := runnerCommand.Start(); err != nil {
+	runner.runnerCommand.Stdout = os.Stdout
+	runner.runnerCommand.Stderr = os.Stderr
+	if err := runner.runnerCommand.Start(); err != nil {
 		return "", fmt.Errorf("start runner in Tart VM: %w", err)
 	}
-	runner.runnerDone = waitForCommand(runnerCommand)
+	runner.runnerDone = waitForCommand(runner.runnerCommand)
 	s.runners.add(runner)
-
-	go func() {
-		err := <-runner.runnerDone
-		if err != nil {
-			s.logger.Warn("Runner process exited", "runner", name, "error", err)
-		} else {
-			s.logger.Info("Runner process exited", "runner", name)
-		}
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := s.removeRunner(cleanupCtx, name); err != nil {
-			s.logger.Error("Failed to remove exited runner", "runner", name, "error", err)
-		}
-	}()
+	go s.watchRunner(runner)
+	go s.monitorRunner(runner)
 
 	s.logger.Info("Runner is starting", "runner", name)
 	return name, nil
+}
+
+func (s *tartScaler) watchRunner(runner *runnerVM) {
+	err := <-runner.runnerDone
+	if err != nil {
+		s.logger.Warn("Runner process exited", "runner", runner.name, "error", err)
+	} else {
+		s.logger.Info("Runner process exited", "runner", runner.name)
+	}
+	if s.ctx.Err() == nil {
+		if err := s.replaceRunner(runner.name); err != nil {
+			s.logger.Error("Failed to replace exited runner", "runner", runner.name, "error", err)
+		}
+	}
+}
+
+func (s *tartScaler) monitorRunner(runner *runnerVM) {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	var health runnerHealth
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		if !s.runners.has(runner.name) {
+			return
+		}
+		probeCtx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+		alive, err := runnerAlive(probeCtx, s.cfg, runner.name)
+		cancel()
+		if s.ctx.Err() != nil {
+			return
+		}
+		if !health.observe(alive, err) {
+			continue
+		}
+		s.logger.Warn("Runner is unhealthy; replacing VM", "runner", runner.name, "confirmedAbsences", health.absences, "probeErrors", health.probeErrors, "lastError", err)
+		if err := s.replaceRunner(runner.name); err != nil {
+			s.logger.Error("Failed to replace unhealthy runner", "runner", runner.name, "error", err)
+		}
+		return
+	}
+}
+
+type runnerHealth struct {
+	absences    int
+	probeErrors int
+}
+
+func (h *runnerHealth) observe(alive bool, err error) bool {
+	if alive {
+		h.absences, h.probeErrors = 0, 0
+		return false
+	}
+	if err == nil {
+		h.absences++
+		h.probeErrors = 0
+	} else {
+		h.absences = 0
+		h.probeErrors++
+	}
+	return h.absences >= 3 || h.probeErrors >= 12
+}
+
+func runnerAlive(ctx context.Context, cfg config, name string) (bool, error) {
+	const probe = `if /usr/bin/pgrep -x 'Runner.Listener|Runner.Worker' >/dev/null; then echo alive; else result=$?; if [ "$result" -eq 1 ]; then echo absent; else exit "$result"; fi; fi`
+	command := newTartCommand(ctx, cfg, "exec", name, "/bin/sh", "-c", probe)
+	command.Stderr = io.Discard
+	output, err := command.Output()
+	if err != nil {
+		return false, fmt.Errorf("probe runner VM: %w", err)
+	}
+	switch strings.TrimSpace(string(output)) {
+	case "alive":
+		return true, nil
+	case "absent":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected runner probe response")
+	}
+}
+
+func (s *tartScaler) replaceRunner(name string) error {
+	s.scaleMu.Lock()
+	defer s.scaleMu.Unlock()
+	if !s.runners.has(name) {
+		return nil
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	cleanupErr := s.removeRunner(cleanupCtx, name)
+	cancel()
+	if s.ctx.Err() != nil {
+		return cleanupErr
+	}
+	_, scaleErr := s.scaleUpLocked(s.ctx)
+	return errors.Join(cleanupErr, scaleErr)
 }
 
 func (s *tartScaler) removeRunner(ctx context.Context, name string) error {
@@ -206,24 +329,43 @@ func (s *tartScaler) destroyRunner(ctx context.Context, runner *runnerVM) error 
 			}
 		}
 	}
+	if runner.runnerDone != nil {
+		select {
+		case <-runner.runnerDone:
+		case <-time.After(5 * time.Second):
+			if runner.runnerCommand != nil && runner.runnerCommand.Process != nil {
+				_ = runner.runnerCommand.Process.Kill()
+			}
+		}
+	}
 	if runner.vmLog != nil {
 		_ = runner.vmLog.Close()
 	}
 
+	vmGone := false
 	if exists, err := tartVMExists(ctx, s.cfg, runner.name); err != nil {
 		cleanupErrors = append(cleanupErrors, err)
 	} else if exists {
 		if err := runTart(ctx, s.cfg, "delete", runner.name); err != nil {
 			cleanupErrors = append(cleanupErrors, err)
+		} else {
+			vmGone = true
 		}
+	} else {
+		vmGone = true
 	}
-	if err := os.Remove(filepath.Join(s.runnerMarkerDir(), runner.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		cleanupErrors = append(cleanupErrors, fmt.Errorf("remove runner state marker: %w", err))
+	if vmGone {
+		if err := os.Remove(filepath.Join(s.runnerMarkerDir(), runner.name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("remove runner state marker: %w", err))
+		}
 	}
 	return errors.Join(cleanupErrors...)
 }
 
 func (s *tartScaler) shutdown(ctx context.Context) {
+	s.cancel()
+	s.scaleMu.Lock()
+	defer s.scaleMu.Unlock()
 	s.logger.Info("Shutting down Tart runners")
 	for _, runner := range s.runners.takeAll() {
 		s.logger.Info("Destroying runner during shutdown", "runner", runner.name, "busy", runner.busy)

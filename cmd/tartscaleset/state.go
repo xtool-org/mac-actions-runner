@@ -23,6 +23,13 @@ func (s *runnerState) count() int {
 	return len(s.runners)
 }
 
+func (s *runnerState) has(name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.runners[name]
+	return ok
+}
+
 func (s *runnerState) markBusy(name string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

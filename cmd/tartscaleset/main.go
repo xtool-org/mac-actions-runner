@@ -126,7 +126,7 @@ func run(ctx context.Context) error {
 	}
 	defer sessionClient.Close(context.Background())
 
-	scaler, err := newTartScaler(cfg, client, scaleSet.ID, logger.WithGroup("tart"))
+	scaler, err := newTartScaler(ctx, cfg, client, scaleSet.ID, logger.WithGroup("tart"))
 	if err != nil {
 		return fmt.Errorf("initialize Tart scaler: %w", err)
 	}

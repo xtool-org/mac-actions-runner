@@ -56,6 +56,11 @@ a minimum size of 20 GB and is expanded to 50 GB by default. Its embedded image
 version is recorded in `~/.config/tartscaleset`; bumping `baseImageVersion`
 rebuilds an outdated base VM the next time `tartscaleset` starts.
 
+Disposable guests have Ubuntu's automatic apt timers disabled: an unattended
+upgrade can restart the Tart guest agent and terminate its runner. Rebuild the
+base VM to pick up guest package updates. The controller probes each runner and
+replaces its VM if the runner process disappears.
+
 `tartscaleset` starts a GitHub Actions runner scale-set listener backed by Tart. It
 keeps one clean runner waiting by default, generates a JIT configuration for
 each runner, and deletes its disposable VM when the job completes. Set

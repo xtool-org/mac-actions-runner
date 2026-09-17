@@ -15,7 +15,8 @@ export DEBIAN_FRONTEND=noninteractive
   ca-certificates \
   curl \
   git \
-  jq
+  jq \
+  procps
 
 curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
 "${sudo_command[@]}" sh /tmp/get-docker.sh
@@ -58,6 +59,12 @@ done
 "${sudo_command[@]}" /opt/actions-runner/bin/installdependencies.sh
 rm -f "${runner_archive}"
 "${sudo_command[@]}" apt-get clean
+
+# A timer-triggered upgrade can restart tart-guest-agent while it owns a runner
+# process, killing that process mid-job. Update the disposable base image when
+# desired instead of upgrading individual runner VMs after they boot.
+"${sudo_command[@]}" systemctl disable --now apt-daily.timer apt-daily-upgrade.timer
+"${sudo_command[@]}" systemctl mask apt-daily.timer apt-daily-upgrade.timer
 sync
 
 echo "Provisioned GitHub Actions runner ${runner_version} with Docker and Docker Compose."

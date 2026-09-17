@@ -18,11 +18,12 @@ import (
 )
 
 const (
-	tartVersion    = "2.32.1"
-	tartURL        = "https://github.com/openai/tart/releases/download/2.32.1/tart.tar.gz"
-	softnetVersion = "0.19.0"
-	softnetURL     = "https://github.com/openai/softnet/releases/download/0.19.0/softnet.tar.gz"
-	softnetSHA256  = "1612e1296834aae0b6389650c7c5190add1ee8d71474e328691e67679ecda53c"
+	tartVersion    = "2.37.0"
+	tartURL        = "https://github.com/openai/tart/releases/download/2.37.0/tart.tar.gz"
+	tartSHA256     = "d531752c4dad5d4214ac7ff540cefc2647df1fca2338d413d3c01754f54b356b"
+	softnetVersion = "0.23.0"
+	softnetURL     = "https://github.com/openai/softnet/releases/download/0.23.0/softnet.tar.gz"
+	softnetSHA256  = "b5daa4e5efaef3c2716f872dcda3961a35b2bddcdf03fe630ac3db0ab8156f3e"
 )
 
 type toolManager struct {
@@ -30,7 +31,7 @@ type toolManager struct {
 }
 
 func (m toolManager) ensureTart(ctx context.Context) (string, error) {
-	return m.install(ctx, "Tart", "tart", tartVersion, tartURL, "", filepath.Join("tart.app", "Contents", "MacOS", "tart"))
+	return m.install(ctx, "Tart", "tart", tartVersion, tartURL, tartSHA256, filepath.Join("tart.app", "Contents", "MacOS", "tart"))
 }
 
 func (m toolManager) ensureSoftnet(ctx context.Context) (string, error) {
