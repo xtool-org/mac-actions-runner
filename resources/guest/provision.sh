@@ -14,10 +14,12 @@ export DEBIAN_FRONTEND=noninteractive
 "${sudo_command[@]}" apt-get install -y \
   ca-certificates \
   curl \
-  docker-compose-v2 \
-  docker.io \
   git \
   jq
+
+curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+"${sudo_command[@]}" sh /tmp/get-docker.sh
+rm -f /tmp/get-docker.sh
 
 "${sudo_command[@]}" systemctl enable --now docker
 "${sudo_command[@]}" usermod -aG docker admin

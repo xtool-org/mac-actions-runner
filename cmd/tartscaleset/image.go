@@ -15,7 +15,7 @@ import (
 	resources "github.com/xtool-org/xtool-runner"
 )
 
-const baseImageVersion = "1"
+const baseImageVersion = "2"
 
 func prepareBaseImage(ctx context.Context, cfg config, logger *slog.Logger) (returnedErr error) {
 	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
