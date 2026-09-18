@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 
@@ -67,11 +68,15 @@ func loadConfig(ctx context.Context) (config, error) {
 	if err != nil {
 		return config{}, err
 	}
+	if cfg.SoftnetBin != "" && cfg.SoftnetBin != "auto" {
+		cfg.SoftnetBin, err = filepath.Abs(cfg.SoftnetBin)
+		if err != nil {
+			return config{}, fmt.Errorf("resolve SOFTNET_BIN: %w", err)
+		}
+	}
 	if cfg.TartNetworkMode == "softnet" {
 		if cfg.SoftnetBin == "auto" {
 			cfg.SoftnetBin, err = tools.ensureSoftnet(ctx)
-		} else {
-			cfg.SoftnetBin, err = filepath.Abs(cfg.SoftnetBin)
 		}
 		if err != nil {
 			return config{}, err
@@ -97,6 +102,36 @@ func trimStrings(values []string) []string {
 		}
 	}
 	return trimmed
+}
+
+func (c config) launchEnvironment() map[string]string {
+	environment := make(map[string]string)
+	configType := reflect.TypeFor[config]()
+	for i := 0; i < configType.NumField(); i++ {
+		name := configType.Field(i).Tag.Get("env")
+		if name == "" {
+			continue
+		}
+		if value, ok := os.LookupEnv(name); ok {
+			environment[name] = value
+		}
+	}
+	if _, ok := environment["RUNNER_STATE_DIR"]; ok {
+		environment["RUNNER_STATE_DIR"] = c.StateDir
+	}
+	for name, resolved := range map[string]string{
+		"APP_PRIVATE_KEY_FILE": c.AppPrivateKeyFile,
+		"TART_BIN":             c.TartBin,
+		"SOFTNET_BIN":          c.SoftnetBin,
+		"XCODE_APP_PATH":       c.XcodeAppPath,
+	} {
+		value, ok := environment[name]
+		if !ok || value == "auto" || (name == "XCODE_APP_PATH" && value == "none") {
+			continue
+		}
+		environment[name] = resolved
+	}
+	return environment
 }
 
 func (c *config) resolveStateDir() error {
@@ -134,6 +169,12 @@ func (c *config) resolveRuntimePaths() error {
 			return fmt.Errorf("xcode-select does not point inside an Xcode.app: %s", developerDir)
 		}
 		c.XcodeAppPath = strings.TrimSuffix(developerDir, suffix)
+	} else if c.XcodeAppPath != "" {
+		absolute, err := filepath.Abs(c.XcodeAppPath)
+		if err != nil {
+			return fmt.Errorf("resolve XCODE_APP_PATH: %w", err)
+		}
+		c.XcodeAppPath = absolute
 	}
 	if c.AppPrivateKeyFile == "auto" {
 		c.AppPrivateKeyFile = filepath.Join(c.StateDir, "private-key.pem")

@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -18,7 +17,6 @@ const launchAgentLabel = "sh.xtool.tartscaleset"
 
 type launchAgentConfig struct {
 	Executable        string
-	WorkingDirectory  string
 	StandardOutPath   string
 	StandardErrorPath string
 	Environment       map[string]string
@@ -47,10 +45,6 @@ func registerLaunchAgent(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("resolve tartscaleset executable: %w", err)
 	}
-	workingDirectory, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("resolve working directory: %w", err)
-	}
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("resolve home directory: %w", err)
@@ -65,12 +59,11 @@ func registerLaunchAgent(ctx context.Context) error {
 		return fmt.Errorf("create log directory: %w", err)
 	}
 
-	environment := configuredLaunchEnvironment()
+	environment := cfg.launchEnvironment()
 	environment["HOME"] = homeDir
 	plistPath := filepath.Join(launchAgentsDir, launchAgentLabel+".plist")
 	plist := renderLaunchAgentPlist(launchAgentConfig{
 		Executable:        executable,
-		WorkingDirectory:  workingDirectory,
 		StandardOutPath:   filepath.Join(logDir, "launchd.log"),
 		StandardErrorPath: filepath.Join(logDir, "launchd.error.log"),
 		Environment:       environment,
@@ -153,21 +146,6 @@ func launchAgentsDirectory(homeDir string) string {
 	return filepath.Join(homeDir, "Library", "LaunchAgents")
 }
 
-func configuredLaunchEnvironment() map[string]string {
-	environment := make(map[string]string)
-	configType := reflect.TypeFor[config]()
-	for i := 0; i < configType.NumField(); i++ {
-		name := configType.Field(i).Tag.Get("env")
-		if name == "" {
-			continue
-		}
-		if value, ok := os.LookupEnv(name); ok {
-			environment[name] = value
-		}
-	}
-	return environment
-}
-
 func renderLaunchAgentPlist(cfg launchAgentConfig) []byte {
 	var plist strings.Builder
 	plist.WriteString("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
@@ -177,7 +155,6 @@ func renderLaunchAgentPlist(cfg launchAgentConfig) []byte {
 	plist.WriteString("  <key>ProgramArguments</key>\n  <array>\n")
 	writePlistValue(&plist, "    ", "string", cfg.Executable)
 	plist.WriteString("  </array>\n")
-	writePlistString(&plist, "  ", "WorkingDirectory", cfg.WorkingDirectory)
 	writePlistString(&plist, "  ", "StandardOutPath", cfg.StandardOutPath)
 	writePlistString(&plist, "  ", "StandardErrorPath", cfg.StandardErrorPath)
 	plist.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
