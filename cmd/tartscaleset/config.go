@@ -2,17 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"time"
 
 	"github.com/actions/scaleset"
 	"github.com/caarlos0/env/v11"
+	"github.com/joho/godotenv"
 )
 
 type config struct {
@@ -43,12 +44,27 @@ type config struct {
 }
 
 func parseConfig() (config, error) {
+	configPath, err := configFilePath()
+	if err != nil {
+		return config{}, err
+	}
+	if err := godotenv.Load(configPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return config{}, fmt.Errorf("load %s: %w", configPath, err)
+	}
 	cfg, err := env.ParseAs[config]()
 	if err != nil {
-		return config{}, fmt.Errorf("parse environment: %w", err)
+		return config{}, fmt.Errorf("parse configuration: %w", err)
 	}
 	cfg.RunnerLabels = trimStrings(cfg.RunnerLabels)
 	return cfg, nil
+}
+
+func configFilePath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".config", "tartscaleset", "config.env"), nil
 }
 
 func loadConfig(ctx context.Context) (config, error) {
@@ -63,13 +79,13 @@ func loadConfig(ctx context.Context) (config, error) {
 	if cfg.TartBin == "auto" {
 		cfg.TartBin, err = tools.ensureTart(ctx)
 	} else {
-		cfg.TartBin, err = filepath.Abs(cfg.TartBin)
+		cfg.TartBin, err = resolvePath(cfg.TartBin)
 	}
 	if err != nil {
 		return config{}, err
 	}
 	if cfg.SoftnetBin != "" && cfg.SoftnetBin != "auto" {
-		cfg.SoftnetBin, err = filepath.Abs(cfg.SoftnetBin)
+		cfg.SoftnetBin, err = resolvePath(cfg.SoftnetBin)
 		if err != nil {
 			return config{}, fmt.Errorf("resolve SOFTNET_BIN: %w", err)
 		}
@@ -104,46 +120,23 @@ func trimStrings(values []string) []string {
 	return trimmed
 }
 
-func (c config) launchEnvironment() map[string]string {
-	environment := make(map[string]string)
-	configType := reflect.TypeFor[config]()
-	for i := 0; i < configType.NumField(); i++ {
-		name := configType.Field(i).Tag.Get("env")
-		if name == "" {
-			continue
+func resolvePath(path string) (string, error) {
+	if path == "~" || strings.HasPrefix(path, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory: %w", err)
 		}
-		if value, ok := os.LookupEnv(name); ok {
-			environment[name] = value
+		if path == "~" {
+			path = homeDir
+		} else {
+			path = filepath.Join(homeDir, strings.TrimPrefix(path, "~/"))
 		}
 	}
-	if _, ok := environment["RUNNER_STATE_DIR"]; ok {
-		environment["RUNNER_STATE_DIR"] = c.StateDir
-	}
-	for name, resolved := range map[string]string{
-		"APP_PRIVATE_KEY_FILE": c.AppPrivateKeyFile,
-		"TART_BIN":             c.TartBin,
-		"SOFTNET_BIN":          c.SoftnetBin,
-		"XCODE_APP_PATH":       c.XcodeAppPath,
-	} {
-		value, ok := environment[name]
-		if !ok || value == "auto" || (name == "XCODE_APP_PATH" && value == "none") {
-			continue
-		}
-		environment[name] = resolved
-	}
-	return environment
+	return filepath.Abs(path)
 }
 
 func (c *config) resolveStateDir() error {
-	stateDir := c.StateDir
-	if stateDir == "~" || strings.HasPrefix(stateDir, "~/") {
-		homeDir, err := os.UserHomeDir()
-		if err != nil {
-			return fmt.Errorf("resolve home directory: %w", err)
-		}
-		stateDir = filepath.Join(homeDir, strings.TrimPrefix(stateDir, "~/"))
-	}
-	stateDir, err := filepath.Abs(stateDir)
+	stateDir, err := resolvePath(c.StateDir)
 	if err != nil {
 		return fmt.Errorf("resolve RUNNER_STATE_DIR: %w", err)
 	}
@@ -170,7 +163,7 @@ func (c *config) resolveRuntimePaths() error {
 		}
 		c.XcodeAppPath = strings.TrimSuffix(developerDir, suffix)
 	} else if c.XcodeAppPath != "" {
-		absolute, err := filepath.Abs(c.XcodeAppPath)
+		absolute, err := resolvePath(c.XcodeAppPath)
 		if err != nil {
 			return fmt.Errorf("resolve XCODE_APP_PATH: %w", err)
 		}
@@ -179,7 +172,7 @@ func (c *config) resolveRuntimePaths() error {
 	if c.AppPrivateKeyFile == "auto" {
 		c.AppPrivateKeyFile = filepath.Join(c.StateDir, "private-key.pem")
 	} else {
-		appPrivateKeyFile, err := filepath.Abs(c.AppPrivateKeyFile)
+		appPrivateKeyFile, err := resolvePath(c.AppPrivateKeyFile)
 		if err != nil {
 			return fmt.Errorf("resolve APP_PRIVATE_KEY_FILE: %w", err)
 		}

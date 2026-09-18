@@ -55,6 +55,20 @@ curl -fsSL https://github.com/xtool-org/mac-actions-runner/releases/download/con
 tartscaleset register
 ```
 
+## Configuration
+
+Put custom configuration in `~/.config/tartscaleset/config.env`. See
+[cmd/tartscaleset/config.go](/cmd/tartscaleset/config.go) for the list
+of configuration options.
+
+```dotenv
+RUNNER_MAX_COUNT=4
+TART_MEMORY_MB=4096
+```
+
+When running in the foreground, `tartscaleset` also respects configuration
+from the process environment.
+
 # More details
 
 (The copy from hereon out is unreviewed / slop)
@@ -84,8 +98,7 @@ example by replacing its Docker provider with Tart. It uses the public-preview
 The controller is built with `CGO_ENABLED=0`, and both scripts streamed into the
 Linux guests are compiled into the executable with `go:embed`. The resulting
 binary in `.tools/bin/tartscaleset` does not need the repository's scripts or Go
-toolchain at runtime; it only needs its environment and the host files named by
-that environment.
+toolchain at runtime; it only needs its configuration and referenced host files.
 
 To produce a distributable Apple Silicon binary:
 
@@ -95,8 +108,8 @@ CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 \
 ```
 
 Copy only `tartscaleset` to the destination Mac; the repository is not needed.
-From the desired working directory, inject any configuration and run it. The
-first invocation performs the one-time network setup if needed:
+Run it from any directory. The first invocation performs the one-time network
+setup if needed:
 
 ```bash
 export APP_PRIVATE_KEY_FILE=/secure/path/private-key.pem
@@ -114,9 +127,10 @@ output is discarded by default; set `TART_VM_LOGS=true` to write
 `xtool-runner-*.vm.log` under `~/.config/tartscaleset/logs`. Controller and
 runner output still goes to standard output and error.
 
-Configuration comes from process environment variables, parsed with
-[`caarlos0/env`](https://github.com/caarlos0/env). All settings have built-in
-defaults; export only the overrides you need:
+Configuration comes from `config.env`, loaded with
+[`godotenv`](https://github.com/joho/godotenv), and process environment overrides.
+[`caarlos0/env`](https://github.com/caarlos0/env) applies the built-in defaults.
+Export only the foreground overrides you need:
 
 ```bash
 export RUNNER_MAX_COUNT=4

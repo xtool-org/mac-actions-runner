@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
 	"strings"
 )
 
@@ -19,7 +18,6 @@ type launchAgentConfig struct {
 	Executable        string
 	StandardOutPath   string
 	StandardErrorPath string
-	Environment       map[string]string
 }
 
 func registerLaunchAgent(ctx context.Context) error {
@@ -59,14 +57,11 @@ func registerLaunchAgent(ctx context.Context) error {
 		return fmt.Errorf("create log directory: %w", err)
 	}
 
-	environment := cfg.launchEnvironment()
-	environment["HOME"] = homeDir
 	plistPath := filepath.Join(launchAgentsDir, launchAgentLabel+".plist")
 	plist := renderLaunchAgentPlist(launchAgentConfig{
 		Executable:        executable,
 		StandardOutPath:   filepath.Join(logDir, "launchd.log"),
 		StandardErrorPath: filepath.Join(logDir, "launchd.error.log"),
-		Environment:       environment,
 	})
 	if err := writeFileAtomically(plistPath, plist, 0o644); err != nil {
 		return fmt.Errorf("write LaunchAgent: %w", err)
@@ -157,16 +152,6 @@ func renderLaunchAgentPlist(cfg launchAgentConfig) []byte {
 	plist.WriteString("  </array>\n")
 	writePlistString(&plist, "  ", "StandardOutPath", cfg.StandardOutPath)
 	writePlistString(&plist, "  ", "StandardErrorPath", cfg.StandardErrorPath)
-	plist.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
-	keys := make([]string, 0, len(cfg.Environment))
-	for key := range cfg.Environment {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		writePlistString(&plist, "    ", key, cfg.Environment[key])
-	}
-	plist.WriteString("  </dict>\n")
 	plist.WriteString("  <key>RunAtLoad</key>\n  <true/>\n")
 	plist.WriteString("  <key>KeepAlive</key>\n  <true/>\n")
 	plist.WriteString("  <key>ProcessType</key>\n  <string>Background</string>\n")

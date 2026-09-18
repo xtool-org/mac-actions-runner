@@ -20,6 +20,7 @@ func TestTrimStrings(t *testing.T) {
 func TestLoadConfigFromEnvironment(t *testing.T) {
 	directory := t.TempDir()
 	t.Chdir(directory)
+	t.Setenv("HOME", directory)
 	tart := filepath.Join(directory, "tart")
 	if err := os.WriteFile(tart, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
@@ -94,82 +95,85 @@ func TestResolveRuntimePathsMakesXcodePathAbsolute(t *testing.T) {
 	}
 }
 
-func TestLaunchEnvironmentExcludesUnrecognizedVariables(t *testing.T) {
-	t.Setenv("APP_ID", "1234")
-	t.Setenv("PATH", "/unexpected/shell/path")
-	t.Setenv("UNRELATED_SECRET", "do-not-copy")
+func TestConfigFileAndProcessEnvironmentPrecedence(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	configDir := filepath.Join(homeDir, ".config", "tartscaleset")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	contents := "APP_ID=from-file\nRUNNER_MAX_COUNT=2\n"
+	if err := os.WriteFile(filepath.Join(configDir, "config.env"), []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("APP_ID", "from-process")
+	unsetEnvForTest(t, "RUNNER_MAX_COUNT")
 
-	environment := (config{StateDir: "/state"}).launchEnvironment()
-	if environment["APP_ID"] != "1234" {
-		t.Fatalf("APP_ID = %q, want 1234", environment["APP_ID"])
+	cfg, err := parseConfig()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, ok := environment["UNRELATED_SECRET"]; ok {
-		t.Fatal("unrecognized environment variable was captured")
-	}
-	if _, ok := environment["PATH"]; ok {
-		t.Fatal("shell PATH was captured")
+	if cfg.AppID != "from-process" || cfg.MaxRunners != 2 {
+		t.Fatalf("configuration precedence = APP_ID %q, RUNNER_MAX_COUNT %d", cfg.AppID, cfg.MaxRunners)
 	}
 }
 
-func TestLaunchEnvironmentMakesPathsAbsolute(t *testing.T) {
-	directory := t.TempDir()
-	t.Chdir(directory)
-	if err := os.MkdirAll(filepath.Join(directory, "tools"), 0o700); err != nil {
+func TestLoadConfigFromConfigFile(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	configDir := filepath.Join(homeDir, ".config", "tartscaleset")
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "tools", "tart"), []byte("#!/bin/sh\n"), 0o700); err != nil {
+	tart := filepath.Join(configDir, "tart")
+	if err := os.WriteFile(tart, []byte("#!/bin/sh\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(directory, "Xcode.app", "Contents", "Developer"), 0o700); err != nil {
+	for _, name := range []string{"TART_NETWORK_MODE", "RUNNER_STATE_DIR", "APP_PRIVATE_KEY_FILE", "TART_BIN", "XCODE_APP_PATH"} {
+		unsetEnvForTest(t, name)
+	}
+	stateDir := filepath.Join(configDir, "state")
+	key := filepath.Join(configDir, "key.pem")
+	contents := "TART_NETWORK_MODE=shared\nRUNNER_STATE_DIR=" + stateDir + "\nAPP_PRIVATE_KEY_FILE=" + key + "\nTART_BIN=" + tart + "\nXCODE_APP_PATH=none\n"
+	if err := os.WriteFile(filepath.Join(configDir, "config.env"), []byte(contents), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("RUNNER_STATE_DIR", "./state")
-	t.Setenv("APP_PRIVATE_KEY_FILE", "./key.pem")
-	t.Setenv("TART_BIN", "./tools/tart")
-	t.Setenv("SOFTNET_BIN", "./tools/softnet")
-	t.Setenv("XCODE_APP_PATH", "./Xcode.app")
-	t.Setenv("TART_NETWORK_MODE", "shared")
 
 	cfg, err := loadConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	environment := cfg.launchEnvironment()
-	for name, want := range map[string]string{
-		"RUNNER_STATE_DIR":     filepath.Join(directory, "state"),
-		"APP_PRIVATE_KEY_FILE": filepath.Join(directory, "key.pem"),
-		"TART_BIN":             filepath.Join(directory, "tools", "tart"),
-		"SOFTNET_BIN":          filepath.Join(directory, "tools", "softnet"),
-		"XCODE_APP_PATH":       filepath.Join(directory, "Xcode.app"),
-	} {
-		if got := environment[name]; got != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
-		}
+	if cfg.StateDir != stateDir || cfg.AppPrivateKeyFile != key || cfg.TartBin != tart || cfg.XcodeAppPath != "" {
+		t.Fatalf("config file values not applied: %+v", cfg)
 	}
 }
 
-func TestLaunchEnvironmentPreservesAutomaticPaths(t *testing.T) {
-	t.Setenv("APP_PRIVATE_KEY_FILE", "auto")
-	t.Setenv("TART_BIN", "auto")
-	t.Setenv("SOFTNET_BIN", "auto")
-	t.Setenv("XCODE_APP_PATH", "none")
-
-	environment := (config{}).launchEnvironment()
-	for name, want := range map[string]string{
-		"APP_PRIVATE_KEY_FILE": "auto",
-		"TART_BIN":             "auto",
-		"SOFTNET_BIN":          "auto",
-		"XCODE_APP_PATH":       "none",
-	} {
-		if got := environment[name]; got != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
-		}
+func TestConfigFileIsOptionalButMalformedFileFails(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	configPath, err := configFilePath()
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Setenv("SOFTNET_BIN", "")
-	t.Setenv("XCODE_APP_PATH", "")
-	environment = (config{}).launchEnvironment()
-	if environment["SOFTNET_BIN"] != "" || environment["XCODE_APP_PATH"] != "" {
-		t.Fatal("empty optional paths should remain empty")
+	if _, err := parseConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte("APP_ID=\"unterminated\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := parseConfig(); err == nil {
+		t.Fatal("malformed config file was accepted")
+	}
+}
+
+func unsetEnvForTest(t *testing.T, name string) {
+	t.Helper()
+	t.Setenv(name, "")
+	if err := os.Unsetenv(name); err != nil {
+		t.Fatal(err)
 	}
 }
 
