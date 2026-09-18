@@ -44,6 +44,17 @@ Or run in the foreground:
 tartscaleset
 ```
 
+## Updating the runner
+
+```bash
+# download latest binary
+curl -fsSL https://github.com/xtool-org/mac-actions-runner/releases/download/continuous/tartscaleset-darwin-arm64.tar.gz \
+| sudo tar -xz -C /usr/local/bin
+
+# reload
+tartscaleset register
+```
+
 # More details
 
 (The copy from hereon out is unreviewed / slop)
