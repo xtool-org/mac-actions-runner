@@ -4,9 +4,38 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+func TestConfigureVMOutput(t *testing.T) {
+	stateDir := t.TempDir()
+	scaler := &tartScaler{cfg: config{StateDir: stateDir}}
+	runner := &runnerVM{name: "xtool-runner-test", vmCommand: &exec.Cmd{}}
+	if err := scaler.configureVMOutput(runner); err != nil {
+		t.Fatal(err)
+	}
+	if runner.vmLog != nil || runner.vmCommand.Stdout != nil || runner.vmCommand.Stderr != nil {
+		t.Fatal("VM output should be discarded by default")
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "logs")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("default VM output created a logs directory: %v", err)
+	}
+
+	scaler.cfg.TartVMLogs = true
+	runner = &runnerVM{name: "xtool-runner-test", vmCommand: &exec.Cmd{}}
+	if err := scaler.configureVMOutput(runner); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = runner.vmLog.Close() })
+	if runner.vmCommand.Stdout != runner.vmLog || runner.vmCommand.Stderr != runner.vmLog {
+		t.Fatal("enabled VM output should use the per-VM log file")
+	}
+	if _, err := os.Stat(filepath.Join(stateDir, "logs", runner.name+".vm.log")); err != nil {
+		t.Fatalf("enabled VM output did not create a log file: %v", err)
+	}
+}
 
 func TestRunnerAlive(t *testing.T) {
 	for _, test := range []struct {

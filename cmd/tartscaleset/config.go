@@ -32,6 +32,7 @@ type config struct {
 	TartCPU           int      `env:"TART_CPU" envDefault:"4"`
 	TartMemoryMB      int      `env:"TART_MEMORY_MB" envDefault:"8192"`
 	TartDiskGB        int      `env:"TART_DISK_GB" envDefault:"50"`
+	TartVMLogs        bool     `env:"TART_VM_LOGS" envDefault:"false"`
 	TartNetworkMode   string   `env:"TART_NETWORK_MODE" envDefault:"softnet"`
 	TartSoftnetAllow  string   `env:"TART_SOFTNET_ALLOW"`
 	SoftnetBin        string   `env:"SOFTNET_BIN" envDefault:"auto"`

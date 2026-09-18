@@ -98,8 +98,10 @@ managed executables.
 
 Press Ctrl+C to stop the listener. Shutdown deletes its runner VMs, message
 session, and scale set. After an unclean host shutdown, the next start cleans
-VMs recorded by the previous controller before accepting work. Tart VM output
-is written under `~/.config/tartscaleset/logs`.
+VMs recorded by the previous controller before accepting work. Per-VM Tart
+output is discarded by default; set `TART_VM_LOGS=true` to write
+`xtool-runner-*.vm.log` under `~/.config/tartscaleset/logs`. Controller and
+runner output still goes to standard output and error.
 
 Configuration comes from process environment variables, parsed with
 [`caarlos0/env`](https://github.com/caarlos0/env). All settings have built-in

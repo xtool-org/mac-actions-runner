@@ -149,19 +149,11 @@ func (s *tartScaler) startRunner(ctx context.Context) (_ string, returnedErr err
 		return "", err
 	}
 
-	logDir := filepath.Join(s.cfg.StateDir, "logs")
-	if err := os.MkdirAll(logDir, 0o700); err != nil {
-		return "", fmt.Errorf("create log directory: %w", err)
-	}
-	logPath := filepath.Join(logDir, name+".vm.log")
-	runner.vmLog, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
-	if err != nil {
-		return "", fmt.Errorf("open VM log: %w", err)
-	}
 	vmArgs := tartRunArguments(s.cfg, name)
 	runner.vmCommand = newTartCommand(context.Background(), s.cfg, vmArgs...)
-	runner.vmCommand.Stdout = runner.vmLog
-	runner.vmCommand.Stderr = runner.vmLog
+	if err := s.configureVMOutput(runner); err != nil {
+		return "", err
+	}
 	if err := runner.vmCommand.Start(); err != nil {
 		return "", fmt.Errorf("start Tart VM: %w", err)
 	}
@@ -199,6 +191,25 @@ func (s *tartScaler) startRunner(ctx context.Context) (_ string, returnedErr err
 
 	s.logger.Info("Runner is starting", "runner", name)
 	return name, nil
+}
+
+func (s *tartScaler) configureVMOutput(runner *runnerVM) error {
+	if !s.cfg.TartVMLogs {
+		return nil
+	}
+	logDir := filepath.Join(s.cfg.StateDir, "logs")
+	if err := os.MkdirAll(logDir, 0o700); err != nil {
+		return fmt.Errorf("create log directory: %w", err)
+	}
+	logPath := filepath.Join(logDir, runner.name+".vm.log")
+	var err error
+	runner.vmLog, err = os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("open VM log: %w", err)
+	}
+	runner.vmCommand.Stdout = runner.vmLog
+	runner.vmCommand.Stderr = runner.vmLog
+	return nil
 }
 
 func (s *tartScaler) watchRunner(runner *runnerVM) {
