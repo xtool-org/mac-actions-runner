@@ -10,3 +10,7 @@ run: build
 .PHONY: test
 test:
 	go test -race ./...
+
+.PHONY: update
+update:
+	ssh ms '~/update.sh'
